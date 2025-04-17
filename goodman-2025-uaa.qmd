@@ -1,0 +1,799 @@
+---
+title: "Demand Shocks & Special Districts"
+subtitle: "Evidence from Chinese Import Shocks"
+format:
+  niu-revealjs:
+    self-contained: true
+    embed-resources: true
+author:
+  - name: Christopher B. Goodman
+    #orcid: 0000-0002-8565-9714
+    email: cgoodman@niu.edu
+    affiliations: Northern Illinois University
+date: 2025-04-18
+bibliography: references.bib
+citations-hover: true
+#suppress-bibliography: true
+---
+
+```{r setup}
+#| message: FALSE
+#| warning: FALSE
+#| include: FALSE
+
+library("tidyverse")
+library("arrow")
+library("haven")
+library("readxl")
+library("fixest")
+library("modelsummary")
+library("tinytable")
+options(tinytable_html_mathjax = TRUE)
+
+
+`%ni%` <- Negate(`%in%`)
+
+datadir = "~/Library/CloudStorage/Dropbox/Data"
+projectdir = "~/Library/CloudStorage/Dropbox/Projects/Papers"
+
+# Run scripts
+source(file.path(projectdir, "yellow-yard", "analysis", "scripts", "02_data-import-var-create.r"))
+
+pre <- ipw_91_01 |>
+  add_column(period = "1991-2001") |>
+  left_join(ipw_o_91_01, by = "cz90")
+
+post <- ipw_01_11 |>
+  add_column(period = "2001-2011") |>
+  left_join(ipw_o_01_11, by = "cz90")
+
+analysis_vars <- bind_rows(pre, post) |>
+  left_join(spdist_nt, by = c("cz90", "period")) |>
+  select(-year) |>
+  left_join(spdist_ne, by = c("cz90", "period")) |>
+  select(-year) |>
+  left_join(spdist_nx, by = c("cz90", "period")) |>
+  select(-year) |>
+  left_join(spdist_nt_start, by = c("cz90", "period")) |>
+  select(-year) |>
+  left_join(combined, by = c("cz90", "period")) |>
+  select(-year)
+
+falsification_vars <- bind_rows(pre, post) |>
+  mutate(
+    period = case_match(
+      period,
+      "1991-2001" ~ "1971-1981",
+      "2001-2011" ~ "1981-1991"
+    )
+  ) |>
+  rename(ipw_c = ipw) |>
+  left_join(spdist_nt, by = c("cz90", "period")) |>
+  select(-year) |>
+  left_join(combined, by = c("cz90", "period")) |>
+  select(-year)
+
+```
+
+##  {.center .large}
+
+What is the importance of manufacturers in the creation and dissolution of special districts?
+
+## Introduction
+
+-   Special districts are a unique form of local government that provide a single service or a limited number of services
+    -   A defining characteristic: *lack of durability*
+    -   Special districts are created and dissolved frequently
+-   What leads to these changes?
+    -   Changes in demand for services
+    -   Changes in state laws
+    -   Changes in local politics
+
+## Introduction
+
+-   Manufacturers are often viewed as *boundary change entrepreneurs*
+    -   Individuals (or groups of individuals) who seek to alter (or preserve) the boundaries of local governments for both collective and selective gain
+    -   Identifying such individuals is exceedingly difficult outside of case studies
+    -   Proxies or conditions conducive to the emergence of such entrepreneurs are used in the literature
+-   If manufacturers (and their employees) become more or less important in the local area, what happens to special districts?
+    -   Concern: Services provided by special districts may elevate manufacturers
+    -   Solution: Look for shocks, instruments, or both
+
+## Preview of results {visibility="hidden"}
+
+-   Use Chinese import shocks, instrumented using @autor2013, to examine changes in the importance of manufacturers
+    -   The rising threat of Chinese imports worked to diminish U.S. manufacturing, reaching and inflection in 2001 when China joins the World Trade Organization (WTO)
+    -   Areas experienced this shock differently
+-   A \$1,000 increase in import exposure per worker leads to between 1.9 and 3.1 district reduction among urban and urban adjacent commuting zones
+    -   As manufacturers become less important in the local economy, the support for special district declines
+
+## A primer on special districts {visibility="hidden"}
+> *Special district governments are independent, special purpose governmental units that exist as separate entities with substantial administrative and fiscal independence from general purpose local governments* -- U.S. Census Bureau
+
+-   *Administrative independence*
+    -   A sufficiently independent governing board, elected or appointed (or both), without interference from other governments
+-   *Fiscal independence*
+    -   The ability to adopt a budget, levy taxes and/or fees, and issue debt without interference from other governments
+-   Typically, a district is classified as "dependent" because of violations of administrative independence
+
+## A primer on special districts {visibility="hidden"}
+
+**Important features**
+
+-   Typically single function
+
+-   *Territorial flexibility*
+
+    -   Can overlap other governments, including other special districts
+    -   Borders are more easily changed
+    -   Districts typically choose their constituents
+
+-   Usually exempt from various laws governing general purpose governments
+
+    -   Voting share may be apportioned on any number of bases, land ownership is most common
+
+## A primer on special districts {visibility="hidden"}
+
+::::: columns
+::: {.column width="50%"}
+-   Popular but growth has been slowing
+-   Most common areas of specialization
+    -   Fire protection
+    -   Water supply
+    -   Housing & community development
+-   Net counts mask significant churn (many created and many dissolved each period)
+:::
+
+::: {.column width="50%"}
+```{r importance-tbl}
+#| message: FALSE
+#| warning: FALSE
+#| results: asis
+#| echo: false
+
+importance <- tribble(
+  ~year, ~count, ~share,
+  1972, 23885, 0.305364494,
+  1982, 28078,	0.343335779,
+  1992, 31555, 0.371431935,
+  2002, 35052,	0.400479863,
+  2012, 38266, 0.424913387,
+  2022, 39555,	0.435450312
+)
+
+tt(importance, width = c(0.15, 0.30, 0.30)) |>
+  setNames(c("Year", "No. of districts", "Share of all govts")) |>
+  format_tt(j = 2, digits = 0, num_mark_big = ",") |>
+  format_tt(j = 3, fn = scales::label_percent()) |>
+  style_tt(j = 1:3, align = "lcc")
+
+```
+:::
+:::::
+
+## Why are special districts created? {visibility="hidden"}
+
+-   To access public services or respond to changes in demand for public services [@burns1994; @foster1997]
+-   In response to changes in state law, to circumvent restrictions on general purpose local governments [@goodmanleland2019]
+-   Boundary change entrepreneurs seek to alter the system for their collective and selective benefit [@feiock2001]
+
+## Why are special districts dissolved? {visibility="hidden"}
+
+-   Creation in reverse?
+    -   Some evidence for this with circumvention [@goodmanleland2025]
+    -   Municipal TELs decrease dissolutions; municipal functional home rule increases dissolutions
+-   The literature on dissolutions is small
+
+## Boundary change entrepreneurs
+
+-   Pivotal individuals (or groups of individuals) who,
+    -   Get proposed boundary changes on the public agenda
+    -   Shepherd such proposals through the political process
+-   Creation (or preventing a dissolution) of a special district is the simplest form of boundary change [@carr2004]
+-   Who are they?
+    -   Public officials – Mayors and/or city councilors
+    -   Businesses – Chambers of commerce, developers, **manufacturers**
+    -   Residents – Civics groups, HOAs, community leaders, anti-tax groups
+-   Incredible difficult to analyze systematically [@schneider1992]
+
+## Motivations of boundary change entrepreneurs
+
+-   Boundary change entrepreneurs have both a collective and selective goal
+    -   The collective goal allows for the marshaling of support beyond the entrepreneur
+    -   The selective goal is how the entrepreneur benefits from the change
+-   Manufacturers seek economic development (collective) and individual or corporate financial gain (selective)
+
+::: {.callout-important .large appearance="default" icon="false"}
+## For this analysis,
+
+The strength of manufacturers allows them to advocate for new districts and stave off the dissolution of older ones
+:::
+
+## Concern
+
+-   Areas with declining numbers of special districts also have declining manufacturer strength
+    -   This would give the appearance of a relationship with one does not necessarily exist
+-   *Solution*: use exposure to Chinese import competition as a shock
+    -   The endogeneity concern continues, special district might decline in areas with increased import exposure for unrelated reasons
+    -   Instrument import exposure using Chinese imports to other developed countries [@autor2013]
+
+## Import exposure
+
+$$
+\Delta IPW_{uit} = \sum_j \frac{L_{ijt}}{L_{ujt}}\frac{\Delta M_{ucjt}}{L_{it}}
+$$
+
+-   Import exposure is the decadal change in Chinese imports ($\Delta M_{ucjt}$) in industry *j* per worker ($L_{it}$), weighted by the local share ($L_{ijt}$) of national employment ($L_{ujt}$) in industry *j*
+-   Higher levels of exposure indicates an increased likelihood of a weakened manufacturing base
+
+## Instrument
+
+$$
+\Delta IPW_{oit} = \sum_j \frac{L_{ijt-1}}{L_{ujt-1}}\frac{\Delta M_{ocjt}}{L_{it-1}}
+$$
+
+-   The instrument is the decadal change in Chinese imports to other developed countries[^1] ($\Delta M_{ocjt}$) in industry *j* per worker in the previous decade ($L_{it-1}$), weighted by the local share ($L_{ijt-1}$) of national employment ($L_{ujt-1}$) in industry *j* in the previous decade
+
+[^1]: Following @autor2013, eight high income countries: Australia, Denmark, Finland, Germany, Japan, New Zealand, Spain, and Switzerland.
+
+## Analytical details
+
+-   Period:
+    -   RHS: 1991-2011, centering China's 2001 entry into the WTO
+    -   LHS: 1992-2012, aligning with the Census of Governments
+    -   Estimated as stacked, two-period 1991/1992-2011/2012 and pre/post ($n= 636$, balanced pre/post)
+-   Unit of analysis:
+    -   Commuting zone (1993), urban or urban adjacent[^2]
+    -   Assumption that manufacturers, if acting like boundary change entrepreneurs, are most influential in the labor markets they contribute to
+
+[^2]: Via rural-urban continuum codes (ERS) for the central city of the CZ--all metro codes (all central cities \> 250k) and central cities \> 20k and adjacent to a metro area.
+
+##  {#slide-id data-menu-title="CZ Map"}
+
+```{r coverage-map}
+#| message: FALSE
+#| warning: FALSE
+#| results: asis
+#| echo: false
+
+library("sf")
+library("urbnmapr")
+library("directlabels")
+library("ggtext")
+
+## Import CZs
+cz90 <- read_csv(file.path(datadir, "Census", "delineation-files", "czlma903.csv")) |>
+  select(-c(cz80, distance)) |>
+  mutate(
+    fipstate = str_sub(state_place_code, 1, 2),
+    county_fips = case_when(
+      county_fips == "12025" ~ "12086",
+      .default = county_fips
+    ),
+    cen_div = case_when(
+      fipstate %in% c("09", "23", "25", "33", "44", "50") ~ "New England",
+      fipstate %in% c("34", "36", "42") ~ "Middle Atlantic",
+      fipstate %in% c("17", "18", "26", "39", "55") ~ "East North Central",
+      fipstate %in% c("19", "20", "27", "29", "31", "38", "46") ~ "West North Central",
+      fipstate %in% c("10", "11", "12", "13", "24", "37", "45", "51", "54") ~ "South Atlantic",
+      fipstate %in% c("01", "21", "28", "47") ~ "East South Central",
+      fipstate %in% c("05", "22", "40", "48") ~ "West South Central",
+      fipstate %in% c("04", "08", "16", "30", "32", "35", "49", "56") ~ "Mountain",
+      fipstate %in% c("02", "06", "15", "41", "53") ~ "Pacific",
+    )
+  )
+
+# calculate "average" urban-rural score for each CZ
+urban <- cz90 |>
+  group_by(cz90) |>
+  summarise(
+    urban = min(as.numeric(urban_rural_code)),
+    counties = n_distinct(county_fips)
+  )
+
+
+# Import underlying county data
+counties_sf <- get_urbn_map("counties", sf = TRUE)
+# Import underlying state data
+census_sf <- get_urbn_map("states", sf = TRUE) |>
+  filter(!state_abbv %in% c("AK", "HI")) |>
+  mutate(
+    cen_div = case_when(
+      state_fips %in% c("09", "23", "25", "33", "44", "50") ~ "New England",
+      state_fips %in% c("34", "36", "42") ~ "Middle Atlantic",
+      state_fips %in% c("17", "18", "26", "39", "55") ~ "East North Central",
+      state_fips %in% c("19", "20", "27", "29", "31", "38", "46") ~ "West North Central",
+      state_fips %in% c("10", "11", "12", "13", "24", "37", "45", "51", "54") ~ "South Atlantic",
+      state_fips %in% c("01", "21", "28", "47") ~ "East South Central",
+      state_fips %in% c("05", "22", "40", "48") ~ "West South Central",
+      state_fips %in% c("04", "08", "16", "30", "32", "35", "49", "56") ~ "Mountain",
+      state_fips %in% c("02", "06", "15", "41", "53") ~ "Pacific",
+    ),
+    cen_region = case_when(
+      cen_div %in% c("New England", "Middle Atlantic") ~ "Northeast",
+      cen_div %in% c("East North Central", "West North Central") ~ "Midwest",
+      cen_div %in% c("South Atlantic", "East South Central", "West South Central") ~ "South",
+      cen_div %in% c("Mountain", "Pacific") ~ "West"
+    )
+  ) |>
+  group_by(cen_region) |>
+  summarise(across(geometry, ~ sf::st_union(.)), .groups = "drop")
+state_sf <- get_urbn_map("states", sf = TRUE) |>
+  filter(!state_abbv %in% c("AK", "HI"))
+
+# Merge with CZ data and aggregate
+analysis <- counties_sf |>
+  left_join(cz90, by = c("county_fips" = "county_fips")) |>
+  filter(state_abbv %ni% c("AK", "HI")) |>
+  group_by(cz90) |>
+  summarise(across(geometry, ~ sf::st_union(.)), .groups = "drop") |>
+  left_join(urban, by = "cz90")
+
+  ggplot() +
+  #CZs
+  geom_sf(data = filter(analysis, urban <= 4), mapping = aes(), fill = "grey", color = "#ffffff", linewidth = 0.5) +
+  # States
+  geom_sf(data = state_sf, mapping = aes(), fill = NA, color = "#333333", linewidth = 0.5) +
+  # Regions
+  geom_sf(data = census_sf, mapping = aes(), fill = NA, color = "#333333", linewidth = 1.25) +
+  theme_minimal(base_family = "Public Sans") +
+  theme(
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+## Model Specification
+
+$$
+\Delta G_{it} = \gamma_{t} + \beta_{1} \Delta IPW_{uit} + \mathbf{X}'\beta_2 + \epsilon_{it}
+$$
+
+-   where,
+    -   $\Delta G_{it}$ is the decadal change in the net number of special districts in commuting zone *i*
+    -   $\Delta IPW_{uit}$ is the change in import exposure, instrumented with $\Delta IPW_{oit}$
+    -   $\gamma_{t}$ is included in the 1991-2011 regressions, excluded in the 1991-2001 or 2001-2011 regressions
+    -   $X$ is a vector of control variables
+
+## Baseline results
+
+```{r results-setup}
+#| message: FALSE
+#| warning: FALSE
+#| results: asis
+
+
+# Main
+all <- feols(
+  nt_chg ~ pop1000|
+    period |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+### Pre-WTO
+pre_wto <- feols(
+  nt_chg ~ pop1000 |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4) |>
+    filter(period == "1991-2001"),
+  vcov = cluster ~ cz90,
+)
+
+### Post-WTO
+post_wto <- feols(
+  nt_chg ~ pop1000  |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4) |>
+    filter(period == "2001-2011"),
+  vcov = cluster ~ cz90,
+)
+
+# Falsification 
+all_f <- feols(
+  nt_chg ~ pcy + pop1000 |
+    period |
+    ipw_c ~ ipw_o,
+  data = filter(falsification_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+### Pre-WTO
+pre_wto_f <- feols(
+  nt_chg ~ pcy + pop1000 |
+    ipw_c ~ ipw_o,
+  data = filter(falsification_vars, urban <= 4) |>
+    filter(period == "1971-1981"),
+  vcov = cluster ~ cz90,
+)
+
+### Post-WTO
+post_wto_f <- feols(
+  nt_chg ~ pcy + pop1000 |
+    ipw_c ~ ipw_o,
+  data = filter(falsification_vars, urban <= 4) |>
+    filter(period == "1981-1991"),
+  vcov = cluster ~ cz90,
+)
+
+
+models <-
+  list(
+    "1991-2001" = pre_wto, 
+    "2001-2011" = post_wto, 
+    "1991-2011" = all,
+    "1971-1981" = pre_wto_f, 
+    "1981-1991" = post_wto_f, 
+    "1971-1991" = all_f
+    )
+
+cm <- c(
+  "fit_ipw"     = "($\\Delta$ current period imports<br> from China to USA)/worker",
+  "fit_ipw_c"   = "($\\Delta$ future period imports<br> from China to USA)/worker",
+  "(Intercept)" = "Constant")
+
+gm <- tibble::tribble(
+  ~raw,        ~clean,          ~fmt,
+  "nobs",      "N",             0)
+
+modelsummary(
+  models, 
+  estimate = "{estimate}{stars}",
+  stars = c("*" = .05, "**" = 0.01, "***" = .001),
+  escape = FALSE,
+  coef_omit = "Intercept|.*pop",
+  coef_map = cm,
+  gof_map = gm,
+  gof_omit = "Std.Errors|FE: period|RMSE|DF|Deviance|R2|AIC|BIC"
+  ) |>
+  group_tt(j = list("I. 1991-2011" = 2:4, "II. 1971-1991 (pre-exposure)" = 5:7)) |>
+  style_tt(i = -1, fontsize = 0.85) |>
+  style_tt(i = 0:8, fontsize = 0.85)
+
+```
+
+## Baseline results
+
+```{r results-display-2}
+#| message: FALSE
+#| warning: FALSE
+#| results: asis
+#| echo: false
+# Main
+all <- feols(
+  nt_chg ~ pop1000|
+    period |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+all_1 <- feols(
+  nt_chg ~ pop1000 + total_dist|
+    period |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+all_2 <- feols(
+  nt_chg ~ pop1000 + total_dist|
+    period + cen_region |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+all_3 <- feols(
+  nt_chg ~ pop1000 + total_dist + pcy |
+    period + cen_region |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+# Method here: https://lrberge.github.io/fixest/reference/coeftable.fixest.html
+# Save out first stage coefficients
+all_iv = coeftable(all, list = TRUE, stage = 1)
+all_iv_1 = coeftable(all_1, list = TRUE, stage = 1)
+all_iv_2 = coeftable(all_2, list = TRUE, stage = 1)
+all_iv_3 = coeftable(all_3, list = TRUE, stage = 1)
+
+## Method here: https://modelsummary.com/vignettes/modelsummary_extension.html#new-information-tidy_custom-and-glance_custom
+# Save estimates from model 1 to dataframe
+ti <- data.frame(
+  term = "ipw_o",
+  estimate = all_iv$ipw_o$coef,
+  std.error = all_iv$ipw_o$se,
+  p.value = all_iv$ipw_o$pvalue
+)
+# Register as a tidy object
+mod <- list(
+  tidy = ti)
+class(mod) <- "modelsummary_list"
+# Save estimates from model 2 to dataframe
+ti_1 <- data.frame(
+  term = "ipw_o",
+  estimate = all_iv_1$ipw_o$coef,
+  std.error = all_iv_1$ipw_o$se,
+  p.value = all_iv_1$ipw_o$pvalue
+)
+# Register as a tidy object
+mod_1 <- list(
+  tidy = ti_1)
+class(mod_1) <- "modelsummary_list"
+# Save estimates from model 3 to dataframe
+ti_2 <- data.frame(
+  term = "ipw_o",
+  estimate = all_iv_2$ipw_o$coef,
+  std.error = all_iv_2$ipw_o$se,
+  p.value = all_iv_2$ipw_o$pvalue
+)
+# Register as a tidy object
+mod_2 <- list(
+  tidy = ti_2)
+class(mod_2) <- "modelsummary_list"
+# Save estimates from model 4 to dataframe
+ti_3 <- data.frame(
+  term = "ipw_o",
+  estimate = all_iv_3$ipw_o$coef,
+  std.error = all_iv_3$ipw_o$se,
+  p.value = all_iv_3$ipw_o$pvalue
+)
+# Register as a tidy object
+mod_3 <- list(
+  tidy = ti_3)
+class(mod_3) <- "modelsummary_list"
+
+# Stack models on top of each other
+# Method: https://modelsummary.com/vignettes/modelsummary.html#string-rbind-or-rcollapse-panels-of-models-in-stacked-regression-tables
+models <- list(
+  "I. 1991-2011, stacked first differences" = list(
+    "(1)" = all, 
+    "(2)" = all_1, 
+    "(3)" = all_2,
+    "(4)" = all_3
+    ),
+  "II. 2SLS first stage estimates" = list(
+    "(1)" = mod, 
+    "(2)" = mod_1,
+    "(3)" = mod_2, 
+    "(4)" = mod_3
+  ))
+
+cm <- c(
+  "fit_ipw"     = "($\\Delta$ imports from China to USA)/<br>worker",
+  "pop1000"     = "Population",
+  "total_dist"  = "Total districts",
+  "pcy"         = "Income, per capita",
+  "ipw_o"     = "($\\Delta$ imports from China to OTH)/<br>worker")
+
+gm <- tibble::tribble(
+  ~raw,        ~clean,          ~fmt,
+  "nobs",      "N",             0)
+
+rows <- tribble(
+  ~term, ~"(1)", ~"(2)", ~"(3)", ~"(4)",
+  "Census region dummies", "No", "No", "Yes", "Yes")
+
+attr(rows, "position") <- 9
+
+modelsummary(
+  models, 
+  stars = c("*" = .05, "**" = 0.01, "***" = .001),
+  estimate = "{estimate}{stars}",
+  shape = "rbind",
+  escape = FALSE,
+  coef_omit = "Intercept",
+  coef_map = cm,
+  #gof_map = gm,
+  gof_omit = "Num.Obs.|Std.Errors|FE: cen_region|FE: period|RMSE|DF|Deviance|R2|AIC|BIC",
+  add_rows = rows
+  ) |>
+  style_tt(i = -1, fontsize = 0.75) |>
+  style_tt(i = 0:16, fontsize = 0.75)
+
+
+
+```
+
+## Newly created districts
+
+```{r results-display-3}
+#| message: FALSE
+#| warning: FALSE
+#| results: asis
+#| echo: false
+
+# Main
+all <- feols(
+  ne_tot ~ pop1000|
+    period |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+all_1 <- feols(
+  ne_tot ~ pop1000 + total_dist|
+    period |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+all_2 <- feols(
+  ne_tot ~ pop1000 + total_dist|
+    period + cen_region |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+all_3 <- feols(
+  ne_tot ~ pop1000 + total_dist + pcy |
+    period + cen_region |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+
+models <-
+  list(
+    "(1)" = all, 
+    "(2)" = all_1, 
+    "(3)" = all_2,
+    "(4)" = all_3
+    )
+
+cm <- c(
+  "fit_ipw"     = "($\\Delta$ imports from China to USA)/<br>worker",
+  "pop1000"     = "Population",
+  "total_dist"  = "Total districts",
+  "pcy"         = "Income, per capita")
+
+gm <- tibble::tribble(
+  ~raw,        ~clean,          ~fmt,
+  "nobs",      "N",             0)
+
+rows <- tribble(
+  ~term, ~"(1)", ~"(2)", ~"(3)", ~"(4)",
+  "Census region dummies", "No", "No", "Yes", "Yes")
+
+attr(rows, "position") <- 9
+
+modelsummary(
+  models, 
+  estimate = "{estimate}{stars}",
+  stars = c("*" = .05, "**" = 0.01, "***" = .001),
+  escape = FALSE,
+  coef_omit = "Intercept",
+  coef_map = cm,
+  gof_map = gm,
+  gof_omit = "Std.Errors|FE: cen_region|FE: period|RMSE|DF|Deviance|R2|AIC|BIC",
+  add_rows = rows
+  ) |>
+  group_tt(j = list("1991-2011, stacked first differences" = 2:5)) #|>
+  #style_tt(i = -1, fontsize = 0.85) |>
+  #style_tt(i = 0:9, fontsize = 0.85)
+
+
+```
+
+## Dissolved districts
+
+```{r results-display-4}
+#| message: FALSE
+#| warning: FALSE
+#| results: asis
+#| echo: false
+
+# Main
+all <- feols(
+  nx_tot ~ pop1000|
+    period |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+all_1 <- feols(
+  nx_tot ~ pop1000 + total_dist|
+    period |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+all_2 <- feols(
+  nx_tot ~ pop1000 + total_dist|
+    period + cen_region |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+all_3 <- feols(
+  nx_tot ~ pop1000 + total_dist + pcy |
+    period + cen_region |
+    ipw ~ ipw_o,
+  data = filter(analysis_vars, urban <= 4),
+  vcov = cluster ~ cz90,
+)
+
+
+models <-
+  list(
+    "(1)" = all, 
+    "(2)" = all_1, 
+    "(3)" = all_2,
+    "(4)" = all_3
+    )
+
+cm <- c(
+  "fit_ipw"     = "($\\Delta$ imports from China to USA)/<br>worker",
+  "pop1000"     = "Population",
+  "total_dist"  = "Total districts",
+  "pcy"         = "Income, per capita")
+
+gm <- tibble::tribble(
+  ~raw,        ~clean,          ~fmt,
+  "nobs",      "N",             0)
+
+rows <- tribble(
+  ~term, ~"(1)", ~"(2)", ~"(3)", ~"(4)",
+  "Census region dummies", "No", "No", "Yes", "Yes")
+
+attr(rows, "position") <- 9
+
+modelsummary(
+  models, 
+  estimate = "{estimate}{stars}",
+  stars = c("*" = .05, "**" = 0.01, "***" = .001),
+  escape = FALSE,
+  coef_omit = "Intercept",
+  coef_map = cm,
+  gof_map = gm,
+  gof_omit = "Std.Errors|FE: cen_region|FE: period|RMSE|DF|Deviance|R2|AIC|BIC",
+  add_rows = rows
+  ) |>
+  group_tt(j = list("1991-2011, stacked first differences" = 2:5)) #|>
+  #style_tt(i = -1, fontsize = 0.85) |>
+  #style_tt(i = 0:9, fontsize = 0.85)
+
+
+```
+
+## Conclusions
+
+-   Depending on the specification, a \$1,000 increase in import exposure per worker leads to between 1.9 and 3.1 district reduction among urban and urban adjacent commuting zones
+    -   The results appear driven by a reduction in newly created districts
+-   As manufacturers
+    -   decline in local influence or
+    -   their relative demand for services declines
+-   The necessity for new districts also declines and fewer districts are created
+
+## Conclusions {visibility="hidden"}
+
+-   As @schneider1992 note, identifying political entrepreneurs (of which, boundary change entrepreneurs are a subset) is exceedingly difficult outside of rigorous case studies
+
+-   While not perfect, looking for shocks to groups that may contain such entrepreneurs can attempt to approximate their impact
+
+-   This study demonstrates that approach is viable
+
+# Thank you {.slide-bg-red visibility="uncounted"}
+
+## References {visibility="uncounted"}
+
+::: {#refs}
+:::

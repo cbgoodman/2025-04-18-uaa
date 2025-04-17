@@ -1,0 +1,21 @@
+title: niu
+author: Chris Goodman
+version: 1.0.0
+quarto-required: ">=1.5.0"
+contributes:
+  formats:
+    revealjs:
+      theme: [default, niu.scss]
+      width: "1600"
+      height: "900"
+      menu:
+        side: right
+      slide-number: true
+      date-format: long
+      highlight-style: github
+      code-overflow: wrap
+      title-slide-attributes:
+        data-background-image: NIU_horz_3Clr.png
+        data-background-size: 20% 
+        data-background-position: bottom 5% right 5%
+        data-background-repeat: no-repeat
